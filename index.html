@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Turno Seguro - Planta de Beneficio</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        window.FirebaseTools = { initializeApp, getFirestore, collection, addDoc, getDocs };
+    </script>
+
+    <style>
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes pulseAlert { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        .animate-fade-in { animation: fadeIn 0.4s ease-out; }
+        .animate-slide-up { animation: slideUp 0.3s ease-out forwards; }
+        .animate-pulse-alert { animation: pulseAlert 1s infinite; }
+    </style>
+</head>
+<body class="bg-gray-100 selection:bg-yellow-200 font-sans">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        const QUESTIONS = [
+          {
+            id: 1,
+            topic: 'Identificación de Peligros',
+            icon: <i className="fa-solid fa-triangle-exclamation text-3xl text-yellow-500"></i>,
+            imageUrl: 'img_rombo_nfpa.png',
+            question: 'Según el rombo NFPA, ¿cuál es el mayor riesgo del cianuro de sodio (color azul)?',
+            options: [
+              { text: 'Es altamente inflamable (Nivel 4)', isCorrect: false },
+              { text: 'Es un riesgo extremo para la salud/mortal (Nivel 3/4)', isCorrect: true },
+              { text: 'Es muy inestable y puede explotar (Nivel 4)', isCorrect: false }
+            ],
+            explanation: 'El cianuro de sodio tiene un nivel 3 o 4 (dependiendo la concentración) en el cuadrante azul de salud, indicando que la exposición corta puede causar lesiones graves o la muerte.'
+          },
+          {
+            id: 2,
+            topic: 'Incompatibilidades',
+            icon: <i className="fa-solid fa-flask text-3xl text-purple-500"></i>,
+            imageUrl: 'img_incompatibilidad.png',
+            question: 'En la planta, ¿con qué sustancias NUNCA debes mezclar o permitir que entre en contacto el cianuro?',
+            options: [
+              { text: 'Con agua (genera fuego)', isCorrect: false },
+              { text: 'Con cal (baja el pH rápidamente)', isCorrect: false },
+              { text: 'Con ácidos (libera gas cianhídrico mortal)', isCorrect: true }
+            ],
+            explanation: 'El contacto del cianuro con cualquier ácido libera gas cianhídrico (HCN), el cual es altamente tóxico y letal al inhalarse.'
+          },
+          {
+            id: 3,
+            topic: 'Control de Proceso',
+            icon: <i className="fa-solid fa-wind text-3xl text-blue-500"></i>,
+            imageUrl: 'img_ph_control.png',
+            question: 'Para evitar la formación de gas tóxico en los tanques de agitación, ¿cómo debe mantenerse el pH de la pulpa/solución?',
+            options: [
+              { text: 'Ligeramente ácido (pH 5 a 6)', isCorrect: false },
+              { text: 'Neutro (pH 7)', isCorrect: false },
+              { text: 'Altamente alcalino (pH superior a 10.5)', isCorrect: true }
+            ],
+            explanation: 'Se debe añadir cal para mantener el pH por encima de 10.5 en todo momento. Un pH menor incrementa dramáticamente el riesgo de volatilización de gas cianhídrico.'
+          },
+          {
+            id: 4,
+            topic: 'Equipo de Protección Personal (EPP)',
+            icon: <i className="fa-solid fa-helmet-safety text-3xl text-orange-500"></i>,
+            imageUrl: 'img_epp_cianuro.png',
+            question: 'Vas a preparar reactivo en el área de dosificación. ¿Qué EPP es obligatorio según la MSDS?',
+            options: [
+              { text: 'Traje impermeable, guantes de nitrilo o PVC, y respirador full-face con filtros para gases', isCorrect: true },
+              { text: 'Solo guantes de cuero y mascarilla N95 para el polvo', isCorrect: false },
+              { text: 'Gafas de seguridad y guantes de látex quirúrgico', isCorrect: false }
+            ],
+            explanation: 'El cianuro se absorbe por la piel y la inhalación es letal. Se requiere protección completa: traje tipo Tychem, guantes resistentes a químicos (Nitrilo/PVC) y respirador de cara completa.'
+          },
+          {
+            id: 5,
+            topic: 'Primeros Auxilios',
+            icon: <i className="fa-solid fa-heart-pulse text-3xl text-red-500"></i>,
+            imageUrl: 'img_primeros_auxilios.png',
+            question: 'Un compañero inhaló polvo de cianuro y está inconsciente. ¿Qué es lo PRIMERO que NO debes hacer?',
+            options: [
+              { text: 'Alejarlo del área de exposición hacia el aire fresco', isCorrect: false },
+              { text: 'Darle respiración boca a boca', isCorrect: true },
+              { text: 'Avisar al médico para preparar el kit de antídotos', isCorrect: false }
+            ],
+            explanation: 'NUNCA des respiración boca a boca a una víctima de cianuro, ya que te envenenarás tú también. Usa un resucitador manual (Ambú) u oxígeno médico mientras llega la ayuda.'
+          },
+          {
+            id: 6,
+            topic: 'Respuesta a Derrames',
+            icon: <i className="fa-solid fa-shield-halved text-3xl text-green-500"></i>,
+            imageUrl: 'img_derrame.png',
+            question: 'Ocurre un derrame de solución cianurada en la planta. ¿Con qué químico se debe neutralizar después de contenerlo?',
+            options: [
+              { text: 'Con abundante agua a presión', isCorrect: false },
+              { text: 'Con ácido sulfúrico', isCorrect: false },
+              { text: 'Con hipoclorito de sodio (cloro), manteniendo el pH alto', isCorrect: true }
+            ],
+            explanation: 'Los derrames de cianuro se neutralizan con soluciones oxidantes como el hipoclorito de sodio, siempre asegurando que el área esté bien ventilada y el pH se mantenga alcalino.'
+          },
+          {
+            id: 7,
+            topic: 'Almacenamiento Seguro',
+            icon: <i className="fa-solid fa-box-archive text-3xl text-indigo-500"></i>,
+            imageUrl: 'img_almacenamiento.png',
+            question: 'En la bodega de reactivos de la planta de beneficio, ¿cómo se debe almacenar el cianuro de sodio sólido?',
+            options: [
+              { text: 'Junto a los tanques de ácido nítrico para ahorrar espacio', isCorrect: false },
+              { text: 'En un área seca, bien ventilada y totalmente separado de ácidos o explosivos', isCorrect: true },
+              { text: 'A la intemperie, bajo el sol y cubierto con plástico', isCorrect: false }
+            ],
+            explanation: 'El cianuro debe mantenerse siempre seco y en un lugar exclusivo. Mezclarlo en la misma área con ácidos es un riesgo crítico de generación de gas cianhídrico.'
+          },
+          {
+            id: 8,
+            topic: 'Señalización y Síntomas',
+            icon: <i className="fa-solid fa-wind text-3xl text-teal-500"></i>,
+            imageUrl: 'img_evacuacion.png',
+            question: 'Si durante tu turno sientes un olor característico a "almendras amargas", ¿qué debes hacer inmediatamente?',
+            options: [
+              { text: 'Asumir presencia de gas cianhídrico, evacuar de inmediato y dar la alarma', isCorrect: true },
+              { text: 'Es un olor normal de los reactivos, puedes continuar trabajando', isCorrect: false },
+              { text: 'Buscar el origen del olor caminando por la planta sin protección adicional', isCorrect: false }
+            ],
+            explanation: 'El olor a almendras amargas es la principal señal de advertencia del letal gas cianhídrico (HCN). No todos pueden detectarlo, por lo que la evacuación debe ser inmediata ante la menor sospecha.'
+          }
+        ];
+
+        function App() {
+          const [gameState, setGameState] = useState('start');
+          const [currentQuestion, setCurrentQuestion] = useState(0);
+          const [score, setScore] = useState(0);
+          const [selectedOption, setSelectedOption] = useState(null);
+          const [showExplanation, setShowExplanation] = useState(false);
+          const [isCorrectFeedback, setIsCorrectFeedback] = useState(false);
+          const [timeLeft, setTimeLeft] = useState(15);
+
+          const [playerName, setPlayerName] = useState('');
+          const [leaderboardData, setLeaderboardData] = useState([]);
+          const [isSaving, setIsSaving] = useState(false);
+          const [dbReady, setDbReady] = useState(false);
+
+          // --- CONFIGURACIÓN DE TU FIREBASE ---
+          const firebaseConfig = {
+            apiKey: "AIzaSyCSK3-GDrCZkXdnIFRifIHWlqleOn7cVlM",
+            authDomain: "juego-de-hds-cianuro.firebaseapp.com",
+            projectId: "juego-de-hds-cianuro",
+            storageBucket: "juego-de-hds-cianuro.firebasestorage.app",
+            messagingSenderId: "30851401454",
+            appId: "1:30851401454:web:ecdeb51cc5a7a2542255ff",
+            measurementId: "G-Q3S4QJ2N2B"
+          };
+          
+          let db = null;
+
+          // Efecto para inicializar Firebase una vez que la librería cargue
+          useEffect(() => {
+            const initFirebase = setInterval(() => {
+              if (window.FirebaseTools) {
+                try {
+                  const app = window.FirebaseTools.initializeApp(firebaseConfig);
+                  db = window.FirebaseTools.getFirestore(app);
+                  setDbReady(true);
+                  clearInterval(initFirebase);
+                } catch (e) {
+                  console.error("Error inicializando Firebase:", e);
+                  clearInterval(initFirebase);
+                }
+              }
+            }, 500);
+            return () => clearInterval(initFirebase);
+          }, []);
+
+          // Efecto del Temporizador
+          useEffect(() => {
+              if (gameState === 'playing' && !showExplanation && timeLeft > 0) {
+                  const timerId = setTimeout(() => setTimeLeft(prev => prev - 1), 1000);
+                  return () => clearTimeout(timerId);
+              } else if (gameState === 'playing' && !showExplanation && timeLeft === 0) {
+                  setIsCorrectFeedback(false);
+                  setShowExplanation(true);
+              }
+          }, [timeLeft, gameState, showExplanation]);
+
+          const startGame = () => {
+            if (!playerName.trim()) {
+              alert("Por favor, ingresa tu nombre y apellido antes de iniciar.");
+              return;
+            }
+            setGameState('playing');
+            setCurrentQuestion(0);
+            setScore(0);
+            setSelectedOption(null);
+            setShowExplanation(false);
+            setTimeLeft(15);
+          };
+
+          const handleOptionSelect = (optionIndex) => {
+            if (showExplanation) return;
+            
+            const isCorrect = QUESTIONS[currentQuestion].options[optionIndex].isCorrect;
+            setSelectedOption(optionIndex);
+            setIsCorrectFeedback(isCorrect);
+            setShowExplanation(true);
+            
+            if (isCorrect) {
+              setScore(prev => prev + 1);
+            }
+          };
+
+          const autoSaveScore = async () => {
+              setIsSaving(true);
+              const percentage = Math.round((score / QUESTIONS.length) * 100);
+              const newScore = {
+                  name: playerName,
+                  score: score,
+                  percentage: percentage,
+                  date: new Date().toISOString()
+              };
+
+              try {
+                  if (dbReady) {
+                      const app = window.FirebaseTools.initializeApp(firebaseConfig);
+                      const currentDb = window.FirebaseTools.getFirestore(app);
+                      await window.FirebaseTools.addDoc(window.FirebaseTools.collection(currentDb, "capacitacion_scores"), newScore);
+                  } else {
+                      const localScores = JSON.parse(localStorage.getItem('capacitacion_scores') || '[]');
+                      localScores.push(newScore);
+                      localStorage.setItem('capacitacion_scores', JSON.stringify(localScores));
+                  }
+              } catch (error) {
+                  console.error("Error guardando puntaje:", error);
+              }
+              setIsSaving(false);
+          };
+
+          const handleNext = async () => {
+            if (currentQuestion < QUESTIONS.length - 1) {
+              setCurrentQuestion(prev => prev + 1);
+              setSelectedOption(null);
+              setShowExplanation(false);
+              setTimeLeft(15);
+            } else {
+              setGameState('result');
+              await autoSaveScore();
+            }
+          };
+
+          const loadLeaderboard = async () => {
+              let scores = [];
+              try {
+                  if (dbReady) {
+                      const app = window.FirebaseTools.initializeApp(firebaseConfig);
+                      const currentDb = window.FirebaseTools.getFirestore(app);
+                      const querySnapshot = await window.FirebaseTools.getDocs(window.FirebaseTools.collection(currentDb, "capacitacion_scores"));
+                      querySnapshot.forEach((doc) => {
+                          scores.push(doc.data());
+                      });
+                  } else {
+                      scores = JSON.parse(localStorage.getItem('capacitacion_scores') || '[]');
+                  }
+                  
+                  scores.sort((a, b) => b.score - a.score);
+                  setLeaderboardData(scores);
+                  setGameState('leaderboard');
+              } catch (error) {
+                  console.error("Error cargando tabla:", error);
+              }
+          };
+
+          const renderStart = () => (
+            <div className="flex flex-col items-center justify-center text-center space-y-6 animate-fade-in">
+              <div className="bg-yellow-100 p-4 rounded-full border-4 border-yellow-500 shadow-lg relative">
+                <i className="fa-solid fa-shield-halved text-5xl text-yellow-600"></i>
+                {dbReady && (
+                  <div className="absolute top-0 right-0 w-4 h-4 bg-green-500 border-2 border-white rounded-full" title="Conectado a Base de Datos"></div>
+                )}
+              </div>
+              <div>
+                <h1 className="text-3xl font-extrabold text-gray-800 tracking-tight">Turno Seguro</h1>
+                <p className="text-lg text-yellow-600 font-bold mt-1">MGS. YAJAIRA LITUMA</p>
+              </div>
+              <p className="text-gray-600 text-base leading-relaxed px-4">
+                Demuestra tus conocimientos sobre la Hoja de Seguridad (MSDS) del Cianuro de Sodio. 
+                Toma las decisiones correctas para asegurar un procesamiento de mineral sin accidentes.
+              </p>
+
+              <div className="w-full max-w-xs mt-4">
+                <label className="block text-sm font-bold text-gray-700 mb-2 text-left">Identificación del Trabajador:</label>
+                <input 
+                  type="text" 
+                  placeholder="Ej. Juan Pérez" 
+                  value={playerName}
+                  onChange={(e) => setPlayerName(e.target.value)}
+                  className="w-full border-2 border-gray-200 rounded-lg p-3 outline-none focus:border-yellow-500 transition-colors mb-3"
+                />
+                <button 
+                  onClick={startGame}
+                  disabled={!playerName.trim()}
+                  className="w-full bg-yellow-500 hover:bg-yellow-600 disabled:bg-gray-300 disabled:transform-none text-white font-bold py-4 px-8 rounded-xl shadow-md transform transition active:scale-95 flex items-center justify-center space-x-2"
+                >
+                  <span>Iniciar Turno</span>
+                  <i className="fa-solid fa-helmet-safety ml-2"></i>
+                </button>
+              </div>
+              
+              <button 
+                onClick={loadLeaderboard}
+                className="mt-1 w-full max-w-xs bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-3 px-8 rounded-xl shadow-sm transform transition active:scale-95 flex items-center justify-center space-x-2"
+              >
+                <i className="fa-solid fa-trophy text-yellow-600 mr-2"></i>
+                <span>Ver Tabla de Posiciones</span>
+              </button>
+            </div>
+          );
+
+          const renderPlaying = () => {
+            const q = QUESTIONS[currentQuestion];
+            const progress = ((currentQuestion + 1) / QUESTIONS.length) * 100;
+
+            return (
+              <div className="flex flex-col h-full animate-fade-in">
+                {/* Header & Progress */}
+                <div className="mb-6">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm font-bold text-gray-500">Pregunta {currentQuestion + 1} de {QUESTIONS.length}</span>
+                    <div className="flex space-x-2">
+                      <span className={`text-sm font-bold px-3 py-1 rounded-full flex items-center transition-colors ${timeLeft <= 5 ? 'text-red-600 bg-red-100 animate-pulse-alert' : 'text-blue-600 bg-blue-100'}`}>
+                        <i className="fa-solid fa-stopwatch mr-1"></i> {timeLeft}s
+                      </span>
+                      <span className="text-sm font-bold text-yellow-600 bg-yellow-100 px-3 py-1 rounded-full"><i className="fa-solid fa-star mr-1"></i> {score}</span>
+                    </div>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2.5">
+                    <div className="bg-yellow-500 h-2.5 rounded-full transition-all duration-500 ease-out" style={{ width: `${progress}%` }}></div>
+                  </div>
+                </div>
+
+                {/* Question Card */}
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
+                  <div className="flex items-center space-x-3 mb-4 border-b border-gray-50 pb-4">
+                    {q.icon}
+                    <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider">{q.topic}</h2>
+                  </div>
+                  
+                  {q.imageUrl && (
+                    <div className="w-full bg-white rounded-xl mb-4 flex items-center justify-center overflow-hidden">
+                      <img 
+                        src={q.imageUrl} 
+                        alt="" 
+                        className="w-full max-h-56 object-contain rounded-lg border border-gray-100 shadow-sm"
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="80"><rect width="100%" height="100%" fill="%23f9fafb"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="12" fill="%239ca3af">Falta imagen: ${q.imageUrl}</text></svg>`;
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  <h3 className="text-lg font-bold text-gray-800 leading-snug">{q.question}</h3>
+                </div>
+
+                {/* Options */}
+                <div className="space-y-3 flex-grow">
+                  {q.options.map((option, idx) => {
+                    let buttonClass = "w-full text-left p-4 rounded-xl border-2 transition-all duration-200 flex items-start space-x-3 ";
+                    let icon = null;
+
+                    if (showExplanation) {
+                      if (option.isCorrect) {
+                        buttonClass += "bg-green-50 border-green-500 text-green-800";
+                        icon = <i className="fa-solid fa-circle-check text-green-600 mt-1"></i>;
+                      } else if (idx === selectedOption) {
+                        buttonClass += "bg-red-50 border-red-500 text-red-800";
+                        icon = <i className="fa-solid fa-circle-xmark text-red-600 mt-1"></i>;
+                      } else {
+                        buttonClass += "bg-gray-50 border-gray-200 text-gray-400 opacity-50";
+                      }
+                    } else {
+                      buttonClass += "bg-white border-gray-200 text-gray-700 hover:border-yellow-400 hover:bg-yellow-50 active:bg-yellow-100";
+                    }
+
+                    return (
+                      <button 
+                        key={idx} 
+                        onClick={() => handleOptionSelect(idx)}
+                        disabled={showExplanation}
+                        className={buttonClass}
+                      >
+                        {showExplanation && <div className="flex-shrink-0 w-5">{icon}</div>}
+                        <span className="font-medium text-sm sm:text-base leading-tight">{option.text}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Explanation Modal/Box */}
+                {showExplanation && (
+                  <div className="mt-6 p-4 rounded-xl animate-slide-up bg-blue-50 border border-blue-100 text-blue-900">
+                    <h4 className="font-bold flex items-center space-x-2 mb-2">
+                      {timeLeft === 0 && selectedOption === null ? (
+                        <span className="text-orange-600 flex items-center">
+                          <i className="fa-solid fa-clock mr-2"></i> ¡Se acabó el tiempo!
+                        </span>
+                      ) : isCorrectFeedback ? (
+                        <span className="text-green-600 flex items-center">
+                          <i className="fa-solid fa-circle-check mr-2"></i> ¡Correcto!
+                        </span>
+                      ) : (
+                        <span className="text-red-600 flex items-center">
+                          <i className="fa-solid fa-circle-xmark mr-2"></i> Incorrecto
+                        </span>
+                      )}
+                    </h4>
+                    <p className="text-sm opacity-90 mb-4">{q.explanation}</p>
+                    <button 
+                      onClick={handleNext}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition active:scale-95"
+                    >
+                      {currentQuestion < QUESTIONS.length - 1 ? 'Siguiente Situación' : 'Finalizar Turno'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          };
+
+          const renderResult = () => {
+            const percentage = Math.round((score / QUESTIONS.length) * 100);
+            const isApproved = percentage >= 80;
+
+            return (
+              <div className="flex flex-col items-center justify-center text-center space-y-6 h-full animate-fade-in py-8">
+                {isApproved ? (
+                  <div className="bg-green-100 p-5 rounded-full border-4 border-green-500 shadow-md">
+                    <i className="fa-solid fa-medal text-5xl text-green-600"></i>
+                  </div>
+                ) : (
+                  <div className="bg-orange-100 p-5 rounded-full border-4 border-orange-500 shadow-md">
+                    <i className="fa-solid fa-triangle-exclamation text-5xl text-orange-600"></i>
+                  </div>
+                )}
+
+                <div>
+                  <h2 className="text-2xl font-extrabold text-gray-800">
+                    {isApproved ? '¡Turno Completado con Éxito!' : 'Capacitación Finalizada'}
+                  </h2>
+                  <p className="text-gray-500 mt-2">Puntuación Final</p>
+                  <p className={`text-5xl font-black mt-2 ${isApproved ? 'text-green-500' : 'text-orange-500'}`}>
+                    {percentage}%
+                  </p>
+                </div>
+
+                <div className="bg-gray-50 rounded-xl p-5 w-full border border-gray-100">
+                  <p className="text-sm text-gray-600">
+                    {isApproved 
+                      ? "Excelente trabajo. Conoces perfectamente la Hoja de Seguridad del cianuro. Eres un elemento seguro para la planta de beneficio."
+                      : "Te recomendamos repasar la Hoja de Seguridad (MSDS) del cianuro para fortalecer tus conocimientos y mantener un entorno de trabajo seguro."}
+                  </p>
+                </div>
+
+                <button 
+                  onClick={loadLeaderboard}
+                  disabled={isSaving}
+                  className="w-full max-w-xs mt-4 bg-yellow-500 hover:bg-yellow-600 disabled:bg-yellow-300 text-white font-bold py-4 px-8 rounded-xl shadow-md transform transition active:scale-95 flex items-center justify-center space-x-2"
+                >
+                  {isSaving ? (
+                    <><i className="fa-solid fa-spinner fa-spin mr-2"></i> Guardando...</>
+                  ) : (
+                    <><i className="fa-solid fa-trophy mr-2"></i> Ver Tabla de Posiciones</>
+                  )}
+                </button>
+
+                <button 
+                  onClick={startGame}
+                  className="w-full max-w-xs mt-2 bg-gray-800 hover:bg-gray-900 text-white font-bold py-4 px-8 rounded-xl shadow-md transform transition active:scale-95 flex items-center justify-center space-x-2"
+                >
+                  <i className="fa-solid fa-rotate-left mr-2"></i>
+                  <span>Reintentar Capacitación</span>
+                </button>
+              </div>
+            );
+          };
+
+          const renderLeaderboard = () => (
+            <div className="flex flex-col h-full animate-fade-in py-4">
+              <div className="flex items-center justify-center space-x-3 mb-6">
+                <i className="fa-solid fa-trophy text-3xl text-yellow-500"></i>
+                <h2 className="text-2xl font-extrabold text-gray-800">Ranking Seguro</h2>
+              </div>
+              
+              <div className="flex-grow overflow-y-auto pr-2 space-y-3 mb-6 max-h-[400px]">
+                {leaderboardData.length === 0 ? (
+                  <p className="text-center text-gray-500 italic mt-10">Aún no hay registros en la base de datos. ¡Sé el primero!</p>
+                ) : (
+                  leaderboardData.map((data, idx) => (
+                    <div key={idx} className="flex items-center justify-between bg-white border border-gray-100 shadow-sm p-4 rounded-xl">
+                      <div className="flex items-center space-x-4">
+                        <span className={`font-black text-xl ${idx === 0 ? 'text-yellow-500' : idx === 1 ? 'text-gray-400' : idx === 2 ? 'text-orange-400' : 'text-gray-300'}`}>
+                          #{idx + 1}
+                        </span>
+                        <span className="font-bold text-gray-700">{data.name}</span>
+                      </div>
+                      <div className="flex flex-col items-end">
+                        <span className="font-black text-green-600">{data.percentage}%</span>
+                        <span className="text-xs text-gray-400">{data.score} pts</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <button 
+                onClick={() => setGameState('start')}
+                className="w-full bg-gray-800 hover:bg-gray-900 text-white font-bold py-4 px-8 rounded-xl shadow-md transform transition active:scale-95 flex items-center justify-center space-x-2"
+              >
+                <i className="fa-solid fa-house mr-2"></i>
+                <span>Volver al Inicio</span>
+              </button>
+            </div>
+          );
+
+          return (
+            <div className="min-h-screen flex items-center justify-center p-4">
+              <div className="w-full max-w-md bg-white min-h-[600px] h-full sm:h-auto rounded-3xl shadow-2xl p-6 sm:p-8 flex flex-col relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-400 rounded-bl-full opacity-10 pointer-events-none -mr-4 -mt-4"></div>
+                <div className="absolute bottom-0 left-0 w-24 h-24 bg-gray-800 rounded-tr-full opacity-5 pointer-events-none"></div>
+                <div className="relative z-10 flex-grow flex flex-col">
+                  {gameState === 'start' && renderStart()}
+                  {gameState === 'playing' && renderPlaying()}
+                  {gameState === 'result' && renderResult()}
+                  {gameState === 'leaderboard' && renderLeaderboard()}
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
